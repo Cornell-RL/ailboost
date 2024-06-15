@@ -1,0 +1,85 @@
+defaults:
+  - _self_
+  - algo: sac # sac
+  - agent: boosting # boosting or dac
+  - suite: dmc
+  #- override hydra/launcher: submitit_local
+
+# Experiment name
+experiment: boosting
+
+# wandb things
+wandb_project_name: state_boosting
+wandb_entity: ???
+
+# General
+seed: 1
+device: cuda # cpu for state-based tasks, cuda for vision
+save_video: false
+save_train_video: false
+use_tb: false
+use_amp: false
+wandb: true
+expert_dir: /home/ds844/boosting_il/expert_data/dmc/ # please change this
+num_demos: 1 # default to 10 later on
+
+# replay buffer
+replay_buffer_size: ${suite.num_train_steps} # can default to 1e6 or 1e7, have to fix bug in weights when replay buffer gets full
+# replay_buffer_size: 1000000
+replay_buffer_num_workers: 2
+# replay_buffer_num_workers: 2
+nstep: ${algo.nstep}
+batch_size: ${algo.batch_size}
+discount: ${suite.discount}
+# buffer: old
+buffer_local: true
+roll: true
+
+
+# FOR now
+return_one_step: false
+idm_iter: 1
+mlp_dense: false
+epochs: 100
+eval_freq: 2
+separate_enc: false
+ensemble_size: 5
+prior: true
+bootstrap: true
+ensemble_encoder: false
+uncertainty_type: var_max
+num_rl_updates_per_step: 1
+
+# BOOSTING
+n_sample_episodes: 2
+reset_policy: false
+disc_iter: 100
+policy_iter: 1000
+eta: 0.05
+n_samples: 1000
+n_learners: ???
+reinit_policy: false
+debug: false
+
+load_checkpoint: false
+checkpoint_path: ./exp/2022.07.05/132235_collect_checkpoints/0/60_snapshot.pt # TODO change this to actual expert data path collected!
+
+use_uuid: true # or the actual uuid which probably isn't easy to configure haha
+
+hydra:
+  run:
+    dir: ./exp_local/${now:%Y.%m.%d}/${now:%H%M%S}_${agent.name}_${hydra.job.override_dirname}
+  sweep:
+    dir: ./exp/${now:%Y.%m.%d}/${now:%H%M}_${experiment}
+    subdir: ${hydra.job.num}
+  # launcher:
+  #   timeout_min: 4300
+  #   cpus_per_task: 10
+  #   gpus_per_node: 1
+  #   tasks_per_node: 1
+  #   mem_gb: 100
+  #   nodes: 1
+    # submitit_folder: ./exp/${now:%Y.%m.%d}/${now:%H%M%S}_${experiment}/.slurm
+  job:
+    chdir: true # previous behavior
+    name: ${experiment}

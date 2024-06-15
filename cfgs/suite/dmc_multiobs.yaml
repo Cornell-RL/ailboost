@@ -1,0 +1,35 @@
+# @package suite
+suite: dmc_multiobs
+task: cheetah_run
+obs_type: pixels
+
+discount: 0.99
+# train settings
+num_train_steps: 6200000
+num_seed_steps: 8000
+# num_train_steps: 1000000
+# num_seed_steps: 6000
+
+# eval
+eval_every_steps: 20000
+num_eval_episodes: 20
+# eval_every_steps: 5000
+# num_eval_episodes: 10
+
+save_snapshot: false
+frame_stack: 3
+action_repeat: 2
+
+task_make_fn_train:
+  _target_: suite.dmc_multiobs.make
+  name: ${suite.task}
+  frame_stack: ${suite.frame_stack}
+  action_repeat: ${suite.action_repeat}
+  seed: ${seed}
+
+task_make_fn_eval:
+  _target_: suite.dmc_multiobs.make
+  name: ${suite.task}
+  frame_stack: ${suite.frame_stack}
+  action_repeat: ${suite.action_repeat}
+  seed: ${seed}

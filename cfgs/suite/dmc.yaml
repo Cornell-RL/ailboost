@@ -1,0 +1,36 @@
+# @package suite
+suite: dmc
+task: walker_walk
+obs_type: states # {states, pixels}
+
+discount: 0.99
+
+# train settings
+num_train_steps: 10000000
+# num_train_steps: 10000000
+num_seed_steps: 5000 # DAC (1000), RL (4000), SAC (5000), Boosting (0)
+
+# eval
+eval_every_steps: 1000 # ${policy_iter}
+num_eval_episodes: 5
+boosting_num_eval_episodes: 20
+
+save_snapshot: true
+frame_stack: 3
+action_repeat: 2
+
+task_make_fn_train:
+  _target_: suite.dmc.make
+  name: ${suite.task}
+  frame_stack: ${suite.frame_stack}
+  action_repeat: ${suite.action_repeat}
+  seed: ${seed}
+  obs_type: ${suite.obs_type}
+
+task_make_fn_eval:
+  _target_: suite.dmc.make
+  name: ${suite.task}
+  frame_stack: ${suite.frame_stack}
+  action_repeat: ${suite.action_repeat}
+  seed: ${seed}
+  obs_type: ${suite.obs_type}
