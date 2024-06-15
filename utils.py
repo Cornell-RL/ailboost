@@ -179,3 +179,112 @@ def compute_gradient_penalty(discriminator, expert_data, policy_data):
 
     grad_pen = 10 * (grad.norm(2, dim=1) - 1).pow(2).sum()
     return grad_pen
+
+
+import pickle
+from collections import defaultdict
+from pathlib import Path
+
+import dm_env
+
+# data collection utils (should collect for both state and vision-based observations)
+from agent.agent import Agent
+from suite.dmc_multiobs import make as make_multiobs
+
+
+def collect_data(agent: Agent, env: dm_env.Environment, n_episodes: int):
+    """Collects data from specified agent."""
+    trajs = defaultdict(list)
+    rews = []
+
+    for _ in range(n_episodes):
+        ts = env.reset()
+        ep_rew = 0.0
+
+        ep_states = []
+        ep_actions = []
+        ep_pixels = []
+        ep_next_states = []
+        ep_next_pixels = []
+        ep_rewards = []
+        ep_dones = []
+        ep_discounts = []
+
+        while not ts.last():
+            ob = ts.observation
+
+            with torch.no_grad():
+                state = ob["state"].astype(np.float32)
+                action = agent.act(
+                    state, 0, eval_mode=True
+                )  # step doesn't matter when doing eval so just set it to 0
+
+            # log
+            ep_states.append(ob["state"])
+            ep_pixels.append(ob["pixels"])
+            ep_actions.append(action)
+
+            # step env (guaranteed to not be first, so reward should always be defined)
+            ts = env.step(action)
+            r = ts.reward
+            ep_rew += r
+
+            # log next state things
+            n_ob = ts.observation
+            ep_next_states.append(n_ob["state"])
+            ep_next_pixels.append(n_ob["pixels"])
+            ep_rewards.append(r)
+            ep_dones.append(bool(ts.last() == True))
+            ep_discounts.append(
+                ts.discount
+            )  # this is what is gonna discount the next state (0 if last, which is what we want)
+
+        trajs["states"].append(np.stack(ep_states))
+        trajs["actions"].append(np.stack(ep_actions))
+        trajs["pixels"].append(np.stack(ep_pixels))
+        trajs["next_states"].append(np.stack(ep_next_states))
+        trajs["next_pixels"].append(np.stack(ep_next_pixels))
+        trajs["rewards"].append(np.stack(ep_rewards))
+        trajs["discount"].append(np.stack(ep_discounts))
+        trajs["dones"].append(np.stack(ep_dones))
+
+        rews.append(ep_rew)
+
+    print(
+        f"avg episode reward for this agent across {n_episodes} episodes: {np.mean(rews)}"
+    )
+    return trajs, rews  # dict of lists of trajectory information
+
+
+if __name__ == "__main__":
+    # do data collection in practice
+
+    import argparse
+
+    parser = argparse.ArgumentParser(description="data_collection")
+    parser.add_argument("--ckpt-path", required=True, default=None, type=str)
+    parser.add_argument("--env-name", required=True, default="cheetah_run", type=str)
+    args = parser.parse_args()
+
+    path = Path(args.ckpt_path)
+    with path.open("rb") as f:
+        payload = torch.load(f)
+
+    agent = payload["agent"]
+    env = make_multiobs(args.env_name, seed=1, frame_stack=3, action_repeat=2)
+    n_episodes = 20
+
+    trajs, rews = collect_data(agent, env, n_episodes)
+    for k, v in trajs.items():
+        print(f"{k}: {len(v), v[0].shape}")
+
+    # print reward stats
+    print("reward stats")
+    print("============")
+    print(np.mean(rews), np.std(rews), np.min(rews), np.max(rews))
+    print("============")
+
+    # now save like it is done in generate_v2
+    save_path = Path(f"./{args.env_name}_{n_episodes}.pkl")
+    with open(save_path, "wb") as fs:
+        pickle.dump(trajs, fs)
