@@ -71,19 +71,11 @@ class Workspace:
     def setup(self):
         # create logger
         self.logger = Logger(self.work_dir, use_tb=self.cfg.use_tb)
+
         # create envs
-        self.train_env = dmc.make(
-            self.cfg.task_name,
-            self.cfg.frame_stack,
-            self.cfg.action_repeat,
-            self.cfg.seed,
-        )
-        self.eval_env = dmc.make(
-            self.cfg.task_name,
-            self.cfg.frame_stack,
-            self.cfg.action_repeat,
-            self.cfg.seed,
-        )
+        self.train_env = hydra.utils.call(self.cfg.suite.task_make_fn_train)
+        self.eval_env = hydra.utils.call(self.cfg.suite.task_make_fn_eval)
+        
         # create replay buffer
         data_specs = (
             self.train_env.observation_spec(),
@@ -108,7 +100,7 @@ class Workspace:
         )
         self.disc_loader = make_boosting_loader(
             self.work_dir,
-            self.cfg.num_collect_episodes * 501,  # Make more general... hack for now
+            self.cfg.n_sample_episodes * 501,  # Make more general... hack for now
             self.cfg.batch_size,
             self.cfg.replay_buffer_num_workers,
             self.cfg.save_snapshot,
@@ -201,7 +193,7 @@ class Workspace:
     # ===== Boosting Functions =====
     def collect_samples(self):
         step, episode, total_reward = 0, 0, 0
-        eval_until_episode = utils.Until(self.cfg.num_collect_episodes)
+        eval_until_episode = utils.Until(self.cfg.n_sample_episodes)
         episodes = []
         while eval_until_episode(episode):
             time_step = self.eval_env.reset()

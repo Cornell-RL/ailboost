@@ -216,16 +216,19 @@ class ReplayBuffer(IterableDataset):
 
     def __init__(
         self,
-        replay_dir,
+        work_dir,
         max_size,
         num_workers,
         nstep,
         discount,
         fetch_every,
         save_snapshot,
-        return_one_step,
+        n_learners,
     ):
-        self._replay_dir = replay_dir
+        print("Replay", max_size)
+        replay_dir = work_dir / "buffer"
+        learner_dirs = [work_dir / f"{idx}_buffer" for idx in range(n_learners)]
+        self._replay_dirs = [replay_dir] + learner_dirs
         self._size = 0
         self._max_size = max_size
         self._num_workers = max(1, num_workers)
@@ -236,7 +239,11 @@ class ReplayBuffer(IterableDataset):
         self._fetch_every = fetch_every
         self._samples_since_last_fetch = fetch_every
         self._save_snapshot = save_snapshot
-        self._return_one_step = return_one_step
+
+    def _clear_fns(self, fns):
+        for fn in fns:
+            if fn in self._episodes.keys():
+                del self._episodes[fn]
 
     def _sample_episode(self):
         eps_fn = random.choice(self._episode_fns)
@@ -252,14 +259,14 @@ class ReplayBuffer(IterableDataset):
             early_eps_fn = self._episode_fns.pop(0)
             early_eps = self._episodes.pop(early_eps_fn)
             self._size -= episode_len(early_eps)
-            early_eps_fn.unlink(missing_ok=True)
+            # early_eps_fn.unlink(missing_ok=True)
         self._episode_fns.append(eps_fn)
         self._episode_fns.sort()
         self._episodes[eps_fn] = episode
         self._size += eps_len
 
-        if not self._save_snapshot:
-            eps_fn.unlink(missing_ok=True)
+        # if not self._save_snapshot:
+        #    eps_fn.unlink(missing_ok=True)
         return True
 
     def _try_fetch(self):
@@ -270,7 +277,13 @@ class ReplayBuffer(IterableDataset):
             worker_id = torch.utils.data.get_worker_info().id
         except:
             worker_id = 0
-        eps_fns = sorted(self._replay_dir.glob("*.npz"), reverse=True)
+
+        eps_fns = []
+        for buffer in self._replay_dirs:
+            eps_fns.extend(list(buffer.glob("*.npz")))
+
+        # Sort by timestamp name not by directory name
+        eps_fns = sorted(eps_fns, key=lambda x: x.parts[-1], reverse=True)
         fetched_size = 0
         for eps_fn in eps_fns:
             eps_idx, eps_len = [int(x) for x in eps_fn.stem.split("_")[1:]]
@@ -298,17 +311,15 @@ class ReplayBuffer(IterableDataset):
         next_obs = episode["observation"][idx + self._nstep - 1]
         reward = np.zeros_like(episode["reward"][idx])
         discount = np.ones_like(episode["discount"][idx])
-
-        # 1 step next obs
         for i in range(self._nstep):
             step_reward = episode["reward"][idx + i]
             reward += discount * step_reward
             discount *= episode["discount"][idx + i] * self._discount
-        if self._return_one_step:
-            # This is for r(s, s') for imitation
-            one_step_obs = episode["observation"][idx]
-            return (obs, action, reward, discount, next_obs, one_step_obs)
-        return (obs, action, reward, discount, next_obs)
+
+        # To compute Nstep Online
+        int_obs = episode["observation"][idx : idx + self._nstep - 1]
+        int_act = episode["action"][idx + 1 : idx + self._nstep]
+        return (obs, action, reward, discount, next_obs, int_obs, int_act)
 
     def __iter__(self):
         while True:
